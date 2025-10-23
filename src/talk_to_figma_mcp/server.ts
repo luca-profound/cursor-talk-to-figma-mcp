@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
+import { writeFile } from "fs/promises";
 
 // Define TypeScript interfaces for Figma responses
 interface FigmaResponse {
@@ -870,14 +871,39 @@ server.tool(
         format: format || "PNG",
         scale: scale || 1,
       });
-      const typedResult = result as { imageData: string; mimeType: string };
+      const typedResult = result as {
+        imageData?: string;
+        mimeType?: string;
+        format?: string;
+      };
+
+      if (!typedResult?.imageData) {
+        throw new Error("Image data missing from Figma response");
+      }
+
+      const imageBuffer = Buffer.from(typedResult.imageData, "base64");
+      const requestedFormat = typeof format === "string" ? format.toLowerCase() : undefined;
+      const responseFormat =
+        typeof typedResult.format === "string" ? typedResult.format.toLowerCase() : undefined;
+      const mimeExtension =
+        typeof typedResult.mimeType === "string" && typedResult.mimeType.includes("/")
+          ? typedResult.mimeType.split("/").pop()?.toLowerCase()
+          : undefined;
+
+      const extensionCandidate =
+        requestedFormat || responseFormat || mimeExtension || "png";
+      const extension = extensionCandidate.replace(/[^a-z0-9]/g, "") || "img";
+
+      const fileName = `figma-export-${Date.now()}-${uuidv4().slice(0, 8)}.${extension}`;
+      const outputPath = `/tmp/${fileName}`;
+
+      await writeFile(outputPath, imageBuffer);
 
       return {
         content: [
           {
-            type: "image",
-            data: typedResult.imageData,
-            mimeType: typedResult.mimeType || "image/png",
+            type: "text",
+            text: `Image saved to ${outputPath}`,
           },
         ],
       };
@@ -3098,6 +3124,4 @@ main().catch(error => {
   logger.error(`Error starting FigmaMCP server: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
-
 

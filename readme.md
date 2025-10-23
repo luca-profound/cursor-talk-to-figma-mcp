@@ -193,7 +193,7 @@ The MCP server provides the following tools for interacting with Figma:
 
 ### Export & Advanced
 
-- `export_node_as_image` - Export a node as an image (PNG, JPG, SVG, or PDF) - limited support on image currently returning base64 as text
+- `export_node_as_image` - Export a node as an image (PNG, JPG, SVG, or PDF) and saves it to `/tmp` with a unique filename (stdout reports `Image saved to /tmp/...`)
 
 ### Connection Management
 
