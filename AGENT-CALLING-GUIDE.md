@@ -7,11 +7,12 @@ Key tools:
 - `join_channel` — Join the plugin’s active WebSocket channel
 - `get_subscription_events` — Retrieve queued events for active subscriptions
 - `get_manifest` — Return the generated API manifest (searchable)
+- `export_node_as_image` — Export a node to an image file in `/tmp`
 
 ## Local References
-- Full docs mirror: `figma-plugin-api-docs/developers.figma.com`
+- Full docs mirror: `figma-plugin-api-docs/developers.figma.com/docs/plugins/api/`
 - TypeScript typings: `figma-plugin-api-docs/plugin-typings/package/plugin-api.d.ts`
-- Generated manifest (programatic index): `generated/figma-manifest.json`
+- Generated manifest (programmatic index): `generated/figma-manifest.json`
 
 ## Input Schema (figma)
 - `method` (string, required): API method name (e.g., `on`, `notify`, `createRectangle`).
@@ -101,19 +102,23 @@ Tool: get_manifest
 Input: { "filter": "selection" }
 ```
 
+Export a node as an image (writes to `/tmp`):
+```
+Tool: export_node_as_image
+Input: {
+  "nodeId": "<FIGMA_NODE_ID>",
+  "format": "PNG",
+  "scale": 2
+}
+```
+Response contains a `path` field with the saved file location.
+
+## Load in Figma
+- Manifest to import: `src/cursor_mcp_plugin/manifest.json`
+- Figma Desktop → Plugins → Development → Import plugin from manifest (or Link existing plugin) → select `src/cursor_mcp_plugin/manifest.json`.
+- Run the plugin from the Plugins menu, click “Connect” (port `3055` by default). The UI displays the active channel; use that value with the `join_channel` tool.
+
 ## Troubleshooting
 - “Must join a channel before sending commands” → Run `join_channel` with the channel shown in the plugin UI.
 - No events received → Ensure the plugin UI remains open and connected; verify you used the same `subscriptionId` when polling `get_subscription_events`.
 - Requests timing out → Keep the plugin UI open; progress pings extend timeouts. If using a non‑default socket port, set it in the plugin UI and pass `--server=` to the MCP process if needed.
-
-
-____
-
-## Rules to Stay on Track
-1. Every time you make a change to the figma canvas, request an image to be supplied immediately afterward, then read it from /tmp. This is essential to make sure you can continue to "see" your changes as you apply them.
-2. Whenever you reach a major milestone, you should invoke a sub-agent and get it to independently review your work. Don't bias the agent. Just say something like "Please view the image here: /tmp/whatever.png. A designer made this for the purpose of X. It is a Y. Please review whether it looks coherent, if there are any things amiss (such as misalignment, poor structure, etc), and if there is any room for improvement. Be specific about your feedback." Always make sure to incorporate the feedback from the agent until you get a very good review from the agent without additional changes. If you received other instructions from the human in your original prompt such as reference images, inspiration images, or other requirements, you need to supply those to the sub-agent so that it knows how to grade you.
-3. As you get an assignment, make sure to write an execution plan first. It is a living document that you put as a markdown file in exec-plans. You should update it as you accomplish different milestones so you stay on track. Make sure to read exec-plans/EXEC_PLANS.md for further guidance on it.
-4. When using a sub-agent judge, always instruct it to not look at any other files, only to open the two reference images. This will prevent it from biasing itself by trying to locate your exec plan or other resources.
-5. If you have trouble calling the subagent via codex MCP tool (for instance if the tool returns an error), then you can fallback to `/home/luca/code/codex/codex-rs/target/release/codex exec "your prompt" --output-last-message /tmp/someuniquefilename.txt > /dev/null 2>&1`. This will work directly from the binary and then you can read the response from /tmp. Use 20 minutes for timeout_ms to make sure it doesn't time out early on you.
-6. You can likely ignore subscription type events, we really just want to do two things: writing to canvas and exporting screenshots
-7. If you are asked to make a figma implementation of a reference image, then you should start by doing intensive planning as to how the reference image would be constructed using vector objects. Pay attention to the fact that there could be different layers, polygons, etc. Try not to oversimplify it or it will be hard to crawl out of a bad initial design. Put all of your planning in a .md file in your exec-plan folder.

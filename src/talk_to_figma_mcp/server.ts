@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import WebSocket from "ws";
+import { writeFile } from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 
 import {
@@ -830,6 +831,113 @@ server.tool(
             {
               drain: drainQueue,
               subscriptions: events,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+// Convenience tool: export a node as an image and save to /tmp
+server.tool(
+  "export_node_as_image",
+  "Export a node as an image from Figma and save it to /tmp",
+  {
+    nodeId: z.string().describe("The ID of the node to export"),
+    format: z
+      .enum(["PNG", "JPG", "SVG", "PDF"]) // align with Figma export formats
+      .optional()
+      .describe("Export format (default: PNG)"),
+    scale: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Export scale (default: 1)")
+  },
+  async ({ nodeId, format, scale }) => {
+    const exportFormat = (format || "PNG").toUpperCase();
+    const exportScale = scale ?? 1;
+
+    // Build a manifest invocation for node.exportAsync
+    const invocation = {
+      path: "node",
+      method: "exportAsync",
+      scope: "node" as const,
+      args: [
+        {
+          format: exportFormat,
+          constraint: { type: "SCALE", value: exportScale },
+        },
+      ],
+      context: { nodeId },
+    };
+
+    // Call the plugin via the socket bridge using the generic executor
+    const response = (await sendCommandToFigma("invoke_manifest", {
+      invocation,
+    })) as unknown;
+
+    // The plugin returns a response object with a `result` field containing the normalized payload
+    if (!response || typeof response !== "object" || !("result" in response)) {
+      throw new Error("Unexpected response from Figma when exporting image");
+    }
+
+    const normalized = (response as { result: unknown }).result as unknown;
+
+    // Reconstruct bytes or text depending on format
+    let buffer: Buffer;
+    let extension = exportFormat.toLowerCase();
+
+    if (
+      normalized &&
+      typeof normalized === "object" &&
+      (normalized as any).__type === "Uint8Array" &&
+      Array.isArray((normalized as any).data)
+    ) {
+      const data: number[] = (normalized as any).data as number[];
+      buffer = Buffer.from(Uint8Array.from(data));
+    } else if (typeof normalized === "string") {
+      // SVG content returns as string
+      buffer = Buffer.from(normalized, "utf8");
+      if (exportFormat === "SVG") {
+        extension = "svg";
+      }
+    } else if (
+      normalized &&
+      typeof normalized === "object" &&
+      (normalized as any).__type === "ArrayBuffer" &&
+      Array.isArray((normalized as any).data)
+    ) {
+      const data: number[] = (normalized as any).data as number[];
+      buffer = Buffer.from(Uint8Array.from(data));
+    } else {
+      throw new Error("Unsupported export payload format from plugin");
+    }
+
+    // Normalize extension
+    if (extension === "jpg") extension = "jpg"; // keep
+    if (extension === "png") extension = "png";
+    if (extension === "pdf") extension = "pdf";
+
+    const fileName = `figma-export-${Date.now()}-${uuidv4().slice(0, 8)}.${extension}`;
+    const outputPath = `/tmp/${fileName}`;
+
+    await writeFile(outputPath, buffer);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              path: outputPath,
+              bytes: buffer.byteLength,
+              nodeId,
+              format: exportFormat,
+              scale: exportScale,
             },
             null,
             2
