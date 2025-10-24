@@ -116,88 +116,70 @@ bun socket
 
 ## Usage
 
-1. Start the WebSocket server
-2. Install the MCP server in Cursor
-3. Open Figma and run the Cursor MCP Plugin
-4. Connect the plugin to the WebSocket server by joining a channel using `join_channel`
-5. Use Cursor to communicate with Figma using the MCP tools
+1. Start the WebSocket server (`bun socket`).
+2. Launch the MCP server (either via `bun run src/talk_to_figma_mcp/server.ts` during development or the published package).
+3. Open Figma, run the “Cursor Talk to Figma” plugin, and connect it to the WebSocket channel shown in the plugin UI.
+4. Inside Cursor, call the `join_channel` tool once to bind the MCP server to the same channel.
+5. Invoke the `figma` tool for every Plugin API interaction.
 
-## MCP Tools
+> Tip: run `bun run generate:manifest` whenever you upgrade `@figma/plugin-typings`. The manifest in `generated/figma-manifest.json` plus `src/generated/figma-manifest.ts` is rebuilt automatically during `bun run build`.
 
-The MCP server provides the following tools for interacting with Figma:
+## Single-Tool API Surface
 
-### Document & Selection
+The MCP server now exposes a single high-level tool that dynamically maps to the entire Plugin API.
 
-- `get_document_info` - Get information about the current Figma document
-- `get_selection` - Get information about the current selection
-- `read_my_design` - Get detailed node information about the current selection without parameters
-- `get_node_info` - Get detailed information about a specific node
-- `get_nodes_info` - Get detailed information about multiple nodes by providing an array of node IDs
-- `set_focus` - Set focus on a specific node by selecting it and scrolling viewport to it
-- `set_selections` - Set selection to multiple nodes and scroll viewport to show them
+### `figma`
 
-### Annotations
+- **Description:** Invoke any Figma Plugin API method using manifest-driven validation.
+- **Input shape:**
 
-- `get_annotations` - Get all annotations in the current document or specific node
-- `set_annotation` - Create or update an annotation with markdown support
-- `set_multiple_annotations` - Batch create/update multiple annotations efficiently
-- `scan_nodes_by_types` - Scan for nodes with specific types (useful for finding annotation targets)
+  ```jsonc
+  {
+    "method": "setRelaunchData",
+    "path": "figma",
+    "args": { "data": { "key": "value" } },
+    "context": { "nodeId": "123:456" },
+    "options": {
+      "subscribe": true,
+      "subscriptionId": "optional-fixed-id"
+    }
+  }
+  ```
 
-### Prototyping & Connections
+  - `method` – required string; matches the method name in the manifest.
+  - `path` – optional target path (defaults to `figma`). Use `node` plus `context.nodeId`/`context.useSelection` for node methods.
+  - `args` – array or object of arguments. When object-shaped, the manifest maps keys to positional params.
+  - `overload` – optional index if multiple signatures exist.
+  - `context` – selection/node helpers (`nodeId`, `nodeIds`, `useSelection`, `selectionIndex`, `propertyPath`).
+  - `options.subscribe` / `options.unsubscribe` – wrap `figma.on`, `Node.on`, and similar APIs. Subscriptions stream events back through the plugin UI and can be retrieved with `get_subscription_events`.
 
-- `get_reactions` - Get all prototype reactions from nodes with visual highlight animation
-- `set_default_connector` - Set a copied FigJam connector as the default connector style for creating connections (must be set before creating connections)
-- `create_connections` - Create FigJam connector lines between nodes, based on prototype flows or custom mapping
+- **Response:** JSON object containing the resolved invocation metadata and the normalized return value. When subscriptions are involved the result includes `subscriptionId`, `subscriptionAction`, and `subscriptionActive` flags.
 
-### Creating Elements
+### `get_manifest`
 
-- `create_rectangle` - Create a new rectangle with position, size, and optional name
-- `create_frame` - Create a new frame with position, size, and optional name
-- `create_text` - Create a new text node with customizable font properties
+- **Description:** Returns the generated manifest containing every Plugin API method, overload, parameter list, return type, and doc snippet.
+- **Usage:** `{ "filter": "viewport." }` (optional case-insensitive filter).
 
-### Modifying text content
+### `get_subscription_events`
 
-- `scan_text_nodes` - Scan text nodes with intelligent chunking for large designs
-- `set_text_content` - Set the text content of a single text node
-- `set_multiple_text_contents` - Batch update multiple text nodes efficiently
+- **Description:** Returns queued events emitted by active subscriptions created via the `figma` tool.
+- **Parameters:**
+  - `subscriptionId` or `subscriptionIds` – limit to specific subscriptions.
+  - `drain` (default `true`) – whether to remove events from the queue after fetching.
+- **Response:** Map of subscription IDs to chronological event payloads containing the original data, event name, and timestamps.
 
-### Auto Layout & Spacing
+### `join_channel`
 
-- `set_layout_mode` - Set the layout mode and wrap behavior of a frame (NONE, HORIZONTAL, VERTICAL)
-- `set_padding` - Set padding values for an auto-layout frame (top, right, bottom, left)
-- `set_axis_align` - Set primary and counter axis alignment for auto-layout frames
-- `set_layout_sizing` - Set horizontal and vertical sizing modes for auto-layout frames (FIXED, HUG, FILL)
-- `set_item_spacing` - Set distance between children in an auto-layout frame
+- **Description:** Join the WebSocket channel announced by the Figma plugin UI.
+- **Usage:** `{ "channel": "abc123" }` once per session (subsequent API calls reuse the active channel).
 
-### Styling
+## Working With Subscriptions
 
-- `set_fill_color` - Set the fill color of a node (RGBA)
-- `set_stroke_color` - Set the stroke color and weight of a node
-- `set_corner_radius` - Set the corner radius of a node with optional per-corner control
+1. Call `figma` with `options.subscribe: true` to attach to an event (for example: `{ "method": "on", "path": "figma", "args": { "event": "selectionchange" }, "options": { "subscribe": true } }`).
+2. Receive streaming events via `get_subscription_events` or observe them in Cursor’s logging output.
+3. Call `figma` again with `options.unsubscribe: true` and the same `subscriptionId` to detach.
 
-### Layout & Organization
-
-- `move_node` - Move a node to a new position
-- `resize_node` - Resize a node with new dimensions
-- `delete_node` - Delete a node
-- `delete_multiple_nodes` - Delete multiple nodes at once efficiently
-- `clone_node` - Create a copy of an existing node with optional position offset
-
-### Components & Styles
-
-- `get_styles` - Get information about local styles
-- `get_local_components` - Get information about local components
-- `create_component_instance` - Create an instance of a component
-- `get_instance_overrides` - Extract override properties from a selected component instance
-- `set_instance_overrides` - Apply extracted overrides to target instances
-
-### Export & Advanced
-
-- `export_node_as_image` - Export a node as an image (PNG, JPG, SVG, or PDF) and saves it to `/tmp` with a unique filename (stdout reports `Image saved to /tmp/...`)
-
-### Connection Management
-
-- `join_channel` - Join a specific channel to communicate with Figma
+Events are buffered per subscription ID so long-running sessions can poll the queue without missing updates.
 
 ### MCP Prompts
 

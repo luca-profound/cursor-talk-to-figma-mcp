@@ -596,9 +596,9 @@
           console.error("Cannot send progress update: socket not connected");
           return;
         }
-
+        
         console.log("Sending progress update to server:", progressData);
-
+        
         state.socket.send(
           JSON.stringify({
             id: progressData.commandId,
@@ -608,24 +608,6 @@
               id: progressData.commandId,
               type: "progress_update",
               data: progressData
-            }
-          })
-        );
-      }
-
-      function sendSubscriptionEventToServer(eventPayload) {
-        if (!state.connected || !state.socket) {
-          console.error("Cannot send subscription event: socket not connected");
-          return;
-        }
-
-        state.socket.send(
-          JSON.stringify({
-            type: "message",
-            channel: state.channel,
-            message: {
-              type: "subscription_event",
-              event: eventPayload
             }
           })
         );
@@ -666,16 +648,11 @@
             // Forward the error from plugin code back to WebSocket
             sendErrorResponse(message.id, message.error);
             break;
-          case "progress_update":
-            if (message.data) {
-              updateProgressUI(message.data);
-              sendProgressUpdateToServer(message.data);
-            }
-            break;
-          case "subscription-event":
-            if (message.event) {
-              sendSubscriptionEventToServer(message.event);
-            }
+          case "command_progress":
+            // Update UI with progress information
+            updateProgressUI(message);
+            // Forward progress update to server
+            sendProgressUpdateToServer(message);
             break;
         }
       };
