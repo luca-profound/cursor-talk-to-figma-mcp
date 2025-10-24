@@ -62,8 +62,11 @@ type InvocationContext = {
   [key: string]: unknown;
 };
 
+type PropertyAssignments = Record<string, unknown>;
+
 interface InvocationMetadata {
   manifestEntry: ManifestEntry;
+  propertyAssignments?: PropertyAssignments;
 }
 
 interface InvocationPayload {
@@ -397,6 +400,10 @@ const invocationOptionsShape = {
   subscriptionId: z.string().optional(),
 };
 
+const invocationMetadataShape = {
+  propertyAssignments: z.record(z.string(), z.unknown()).optional(),
+};
+
 const figmaInvocationShape = {
   method: z.string().describe("Name of the Figma API method to call"),
   path: z
@@ -416,6 +423,7 @@ const figmaInvocationShape = {
     .describe("Select a specific overload when multiple signatures exist"),
   context: z.object(invocationContextShape).optional(),
   options: z.object(invocationOptionsShape).optional(),
+  metadata: z.object(invocationMetadataShape).optional(),
 };
 
 const figmaInvocationSchema = z.object(figmaInvocationShape);
@@ -425,6 +433,31 @@ function inferManifestEntries(
   path: string | undefined,
   scope: ManifestEntry["scope"] | undefined
 ): ManifestEntry[] {
+  if (requestedMethod === "__assignProperties__") {
+    const targetPath = path ?? (scope === "node" ? "node" : "figma");
+    if (!targetPath) {
+      throw new Error("Property assignments require a target path (e.g. node)");
+    }
+    const derivedScope =
+      scope ?? (targetPath === "figma" || targetPath.startsWith("figma.") ? "figma" : "node");
+    return [
+      {
+        id: `${targetPath}.__assignProperties__`,
+        scope: derivedScope,
+        path: targetPath,
+        interface: derivedScope === "figma" ? "PluginAPI" : "PropertyAssignment",
+        member: "__assignProperties__",
+        kind: "method",
+        overloadIndex: 0,
+        parameters: [],
+        returns: "void",
+        async: false,
+        deprecated: false,
+        docs: "Synthetic entry used to assign writable properties on the resolved target.",
+      },
+    ];
+  }
+
   if (path) {
     const entries = findManifestEntry(path, requestedMethod) ?? [];
     if (entries.length === 0) {
@@ -616,6 +649,15 @@ server.tool(
   async (rawInput) => {
     const input = figmaInvocationSchema.parse(rawInput);
     const scope = input.scope ?? "figma";
+    const propertyAssignments =
+      input.metadata && typeof input.metadata === "object"
+        ? input.metadata.propertyAssignments
+        : undefined;
+
+    if (propertyAssignments && (!input.path || input.path.length === 0)) {
+      throw new Error("Property assignments require an explicit target path (e.g. node)");
+    }
+
     const entries = inferManifestEntries(input.method, input.path, scope);
 
     const entry =
@@ -705,6 +747,7 @@ server.tool(
       overloadIndex: entry.overloadIndex,
       metadata: {
         manifestEntry: entry,
+        ...(propertyAssignments ? { propertyAssignments } : {}),
       },
       subscription:
         subscriptionAction && subscriptionId

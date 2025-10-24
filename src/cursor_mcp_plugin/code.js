@@ -177,8 +177,64 @@ async function executeManifestInvocation(invocation) {
     throw new Error(`Unable to resolve target for path ${path}`);
   }
 
+  const propertyAssignments =
+    metadata && typeof metadata === "object" && metadata.propertyAssignments
+      ? metadata.propertyAssignments
+      : null;
+
+  let assignmentResult = null;
+  if (propertyAssignments) {
+    if (Array.isArray(target)) {
+      throw new Error("Property assignments do not support array targets");
+    }
+    if (typeof propertyAssignments !== "object") {
+      throw new Error("Invalid propertyAssignments payload");
+    }
+    const applied = {};
+    const keys = Object.keys(propertyAssignments);
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      if (!Object.prototype.hasOwnProperty.call(propertyAssignments, key)) {
+        continue;
+      }
+      const assignmentValue = cloneForAssignment(propertyAssignments[key]);
+      target[key] = assignmentValue;
+      applied[key] = normalizeResult(target[key]);
+    }
+    assignmentResult = applied;
+  }
+
+  if (method === "__assignProperties__") {
+    return {
+      ok: true,
+      scope: resolvedScope,
+      path,
+      method,
+      overloadIndex,
+      args: [],
+      result: assignmentResult,
+      returnType: manifestEntry ? manifestEntry.returns : null,
+      interface: manifestEntry ? manifestEntry.interface : null,
+      async: false,
+    };
+  }
+
   const fn = target[method];
   if (typeof fn !== "function") {
+    if (assignmentResult) {
+      return {
+        ok: true,
+        scope: resolvedScope,
+        path,
+        method,
+        overloadIndex,
+        args: [],
+        result: assignmentResult,
+        returnType: manifestEntry ? manifestEntry.returns : null,
+        interface: manifestEntry ? manifestEntry.interface : null,
+        async: false,
+      };
+    }
     throw new Error(`Method ${method} is not callable on ${path}`);
   }
 
@@ -254,7 +310,25 @@ async function executeManifestInvocation(invocation) {
     subscriptions.delete(subscriptionId);
   }
 
-  const normalizedResult = normalizeResult(result);
+  let normalizedResult = normalizeResult(result);
+
+  if (assignmentResult) {
+    if (
+      normalizedResult === null ||
+      typeof normalizedResult !== "object" ||
+      Array.isArray(normalizedResult)
+    ) {
+      normalizedResult = {
+        methodResult: normalizedResult,
+        assignments: assignmentResult,
+      };
+    } else {
+      normalizedResult = {
+        ...normalizedResult,
+        assignments: assignmentResult,
+      };
+    }
+  }
 
   const argsForResponse = appliedArgs.map((value) => {
     if (typeof value === "function") {
@@ -531,4 +605,36 @@ function normalizeError(error) {
   } catch (serializationError) {
     return { message: "Unknown error" };
   }
+}
+
+function cloneForAssignment(value, seen) {
+  if (!seen) {
+    seen = new WeakMap();
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (seen.has(value)) {
+    return seen.get(value);
+  }
+  if (Array.isArray(value)) {
+    const arrayClone = [];
+    seen.set(value, arrayClone);
+    for (let i = 0; i < value.length; i += 1) {
+      arrayClone[i] = cloneForAssignment(value[i], seen);
+    }
+    return arrayClone;
+  }
+  if (value instanceof Uint8Array) {
+    return value.slice();
+  }
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0);
+  }
+  const clone = {};
+  seen.set(value, clone);
+  for (const key of Object.keys(value)) {
+    clone[key] = cloneForAssignment(value[key], seen);
+  }
+  return clone;
 }

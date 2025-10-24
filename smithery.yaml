@@ -3,12 +3,22 @@
 startCommand:
   type: stdio
   configSchema:
-    # JSON Schema defining the configuration options for the MCP.
-    {}
+    type: object
+    properties:
+      server:
+        type: string
+        description: Override the relay server URL passed to the MCP process.
+    additionalProperties: false
   commandFunction:
     # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
     |-
-    (config) => ({
-      command: 'bunx',
-      args: ['cursor-talk-to-figma-mcp']
-    })
+    (config) => {
+      const path = '/home/luca/code/cursor-talk-to-figma-mcp/dist/server.js';
+      const server = typeof config.server === 'string' && config.server.length > 0
+        ? config.server
+        : 'https://thermotactic-rachal-deprecatively.ngrok-free.dev';
+      return {
+        command: 'node',
+        args: [path, `--server=${server}`],
+      };
+    }
