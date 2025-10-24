@@ -313,6 +313,39 @@ async function resolveTarget(path, scope, context) {
     return figma;
   }
 
+  function isDynamicAccessError(error) {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+    var message = error.message;
+    if (typeof message !== "string") {
+      return false;
+    }
+    return (
+      message.indexOf("documentAccess") !== -1 ||
+      message.indexOf("dynamic-page") !== -1 ||
+      message.indexOf("getNodeByIdAsync") !== -1
+    );
+  }
+
+  async function getNodeWithFallback(nodeId) {
+    if (!nodeId) {
+      return null;
+    }
+    var node = null;
+    try {
+      node = figma.getNodeById(nodeId);
+    } catch (error) {
+      if (!isDynamicAccessError(error)) {
+        throw error;
+      }
+    }
+    if (node) {
+      return node;
+    }
+    return await figma.getNodeByIdAsync(nodeId);
+  }
+
   if (path === "node" || scope === "node") {
     if (context.useSelection) {
       const selection = figma.currentPage.selection || [];
@@ -324,13 +357,9 @@ async function resolveTarget(path, scope, context) {
     }
 
     if (context.nodeId) {
-      const node = figma.getNodeById(context.nodeId);
+      const node = await getNodeWithFallback(context.nodeId);
       if (node) {
         return node;
-      }
-      const asyncNode = await figma.getNodeByIdAsync(context.nodeId);
-      if (asyncNode) {
-        return asyncNode;
       }
       throw new Error(`Node not found: ${context.nodeId}`);
     }
@@ -343,9 +372,13 @@ async function resolveTarget(path, scope, context) {
     if (!nodeIds.length) {
       throw new Error("nodes path requires context.nodeIds");
     }
-    const nodes = nodeIds
-      .map((id) => figma.getNodeById(id))
-      .filter(Boolean);
+    const nodes = [];
+    for (let i = 0; i < nodeIds.length; i += 1) {
+      const resolved = await getNodeWithFallback(nodeIds[i]);
+      if (resolved) {
+        nodes.push(resolved);
+      }
+    }
     if (!nodes.length) {
       throw new Error("Unable to resolve any nodes for provided nodeIds");
     }
