@@ -116,7 +116,11 @@ async function handleExecuteCommand(msg) {
   try {
     switch (command) {
       case "invoke_manifest": {
-        const result = await executeManifestInvocation(params?.invocation);
+        const invocationPayload =
+          params && Object.prototype.hasOwnProperty.call(params, "invocation")
+            ? params.invocation
+            : undefined;
+        const result = await executeManifestInvocation(invocationPayload);
         figma.ui.postMessage({
           type: "command-result",
           id,
@@ -155,6 +159,17 @@ async function executeManifestInvocation(invocation) {
     subscription,
   } = invocation;
 
+  const manifestEntry =
+    metadata && typeof metadata === "object" && metadata.manifestEntry
+      ? metadata.manifestEntry
+      : null;
+  const subscriptionId =
+    subscription && typeof subscription === "object"
+      ? subscription.subscriptionId || subscription.id
+      : undefined;
+  const subscriptionAction =
+    subscription && typeof subscription === "object" ? subscription.action : undefined;
+
   const resolvedScope = scope || inferScope(path);
   const target = await resolveTarget(path, resolvedScope, context);
 
@@ -169,8 +184,6 @@ async function executeManifestInvocation(invocation) {
 
   const appliedArgs = Array.isArray(args) ? [...args] : [];
 
-  const subscriptionId = subscription?.subscriptionId || subscription?.id;
-  const subscriptionAction = subscription?.action;
   const isSubscribe = subscriptionAction === "subscribe";
   const isUnsubscribe = subscriptionAction === "unsubscribe";
 
@@ -264,9 +277,9 @@ async function executeManifestInvocation(invocation) {
     overloadIndex,
     args: argsForResponse,
     result: normalizedResult,
-    returnType: metadata?.manifestEntry?.returns || null,
-    interface: metadata?.manifestEntry?.interface || null,
-    async: metadata?.manifestEntry?.async ?? false,
+    returnType: manifestEntry ? manifestEntry.returns : null,
+    interface: manifestEntry ? manifestEntry.interface : null,
+    async: manifestEntry && typeof manifestEntry.async === "boolean" ? manifestEntry.async : false,
   };
 
   if (subscriptionId) {
@@ -429,7 +442,7 @@ function normalizeResult(value, seen = new WeakSet()) {
       const nodeSummary = {
         id: value.id,
         type: value.type,
-        name: value.name ?? null,
+        name: value.name == null ? null : value.name,
       };
       if ("visible" in value) {
         nodeSummary.visible = value.visible;
@@ -437,7 +450,11 @@ function normalizeResult(value, seen = new WeakSet()) {
       if ("children" in value && Array.isArray(value.children)) {
         nodeSummary.children = value.children.map((child) =>
           child && child.id
-            ? { id: child.id, type: child.type, name: child.name ?? null }
+            ? {
+                id: child.id,
+                type: child.type,
+                name: child.name == null ? null : child.name,
+              }
             : normalizeResult(child, seen)
         );
       }

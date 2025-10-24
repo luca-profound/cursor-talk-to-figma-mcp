@@ -52,6 +52,9 @@ Leverage the MCP Figma tools to join the provided channel, create the rectangle,
 - 2025-10-24 – Plan drafted; awaiting execution.
 - 2025-10-24 – Joined channel `e56nd4kd`.
 - 2025-10-24 – Blocked on rectangle creation; manifest lacks `figma.*` methods.
+- 2025-10-24 – Confirmed `get_manifest` response from active MCP server only contains `node.*` entries (DOM/WebAudio APIs) despite repo manifest listing `figma.*`; runtime appears to load an outdated/partial manifest.
+- 2025-10-24 – Retested after switching to channel `57ekv45h` on remote server `https://thermotactic-rachal-deprecatively.ngrok-free.dev`; join succeeds but manifest still missing `figma.*`, so `figma.createRectangle` continues to fail with “No manifest entry found…”.
+- 2025-10-24 – Investigated plugin console crash (“Unexpected token .”); removed optional chaining/nullish coalescing from `src/cursor_mcp_plugin/code.js` so QuickJS runtime can execute the plugin script.
 
 ## Decision Log
 - 2025-10-24 – Saved exported image as `/tmp/figma-channel-check.png` for easy reference.
