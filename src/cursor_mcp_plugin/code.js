@@ -238,7 +238,7 @@ async function executeManifestInvocation(invocation) {
     throw new Error(`Method ${method} is not callable on ${path}`);
   }
 
-  const appliedArgs = Array.isArray(args) ? [...args] : [];
+  const appliedArgs = Array.isArray(args) ? args.slice() : [];
 
   const isSubscribe = subscriptionAction === "subscribe";
   const isUnsubscribe = subscriptionAction === "unsubscribe";
@@ -323,10 +323,14 @@ async function executeManifestInvocation(invocation) {
         assignments: assignmentResult,
       };
     } else {
-      normalizedResult = {
-        ...normalizedResult,
-        assignments: assignmentResult,
-      };
+      const combined = {};
+      for (const key in normalizedResult) {
+        if (Object.prototype.hasOwnProperty.call(normalizedResult, key)) {
+          combined[key] = normalizedResult[key];
+        }
+      }
+      combined.assignments = assignmentResult;
+      normalizedResult = combined;
     }
   }
 
