@@ -197,8 +197,8 @@ async function executeManifestInvocation(invocation) {
       if (!Object.prototype.hasOwnProperty.call(propertyAssignments, key)) {
         continue;
       }
-      const assignmentValue = cloneForAssignment(propertyAssignments[key]);
-      target[key] = assignmentValue;
+      const materializedValue = await materializeArgument(propertyAssignments[key]);
+      target[key] = materializedValue;
       applied[key] = normalizeResult(target[key]);
     }
     assignmentResult = applied;
@@ -284,6 +284,10 @@ async function executeManifestInvocation(invocation) {
       appliedArgs[0] = existing.eventName;
     }
     appliedArgs[callbackIndex] = existing.callback;
+  }
+
+  for (let i = 0; i < appliedArgs.length; i += 1) {
+    appliedArgs[i] = await materializeArgument(appliedArgs[i]);
   }
 
   let result;
@@ -386,42 +390,94 @@ function inferScope(path) {
   return "figma";
 }
 
+function isDynamicAccessError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  var message = error.message;
+  if (typeof message !== "string") {
+    return false;
+  }
+  return (
+    message.indexOf("documentAccess") !== -1 ||
+    message.indexOf("dynamic-page") !== -1 ||
+    message.indexOf("getNodeByIdAsync") !== -1
+  );
+}
+
+async function getNodeWithFallback(nodeId) {
+  if (!nodeId) {
+    return null;
+  }
+
+  var node = null;
+  try {
+    node = figma.getNodeById(nodeId);
+  } catch (error) {
+    if (!isDynamicAccessError(error)) {
+      throw error;
+    }
+  }
+
+  if (node) {
+    return node;
+  }
+
+  return await figma.getNodeByIdAsync(nodeId);
+}
+
+async function materializeArgument(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === "function") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    var materializedArray = [];
+    for (var i = 0; i < value.length; i += 1) {
+      materializedArray[i] = await materializeArgument(value[i]);
+    }
+    return materializedArray;
+  }
+
+  if (typeof value === "object") {
+    if (
+      Object.prototype.hasOwnProperty.call(value, "__subscriptionCallback") &&
+      value.__subscriptionCallback
+    ) {
+      return value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, "__nodeId")) {
+      var nodeId = value.__nodeId;
+      if (typeof nodeId !== "string" || nodeId.length === 0) {
+        throw new Error("Node reference must include a non-empty __nodeId string");
+      }
+      var node = await getNodeWithFallback(nodeId);
+      if (!node) {
+        throw new Error("Node not found: " + nodeId);
+      }
+      return node;
+    }
+
+    var materializedObject = {};
+    for (var key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        materializedObject[key] = await materializeArgument(value[key]);
+      }
+    }
+    return materializedObject;
+  }
+
+  return value;
+}
+
 async function resolveTarget(path, scope, context) {
   if (!path || path === "figma") {
     return figma;
-  }
-
-  function isDynamicAccessError(error) {
-    if (!error || typeof error !== "object") {
-      return false;
-    }
-    var message = error.message;
-    if (typeof message !== "string") {
-      return false;
-    }
-    return (
-      message.indexOf("documentAccess") !== -1 ||
-      message.indexOf("dynamic-page") !== -1 ||
-      message.indexOf("getNodeByIdAsync") !== -1
-    );
-  }
-
-  async function getNodeWithFallback(nodeId) {
-    if (!nodeId) {
-      return null;
-    }
-    var node = null;
-    try {
-      node = figma.getNodeById(nodeId);
-    } catch (error) {
-      if (!isDynamicAccessError(error)) {
-        throw error;
-      }
-    }
-    if (node) {
-      return node;
-    }
-    return await figma.getNodeByIdAsync(nodeId);
   }
 
   if (path === "node" || scope === "node") {
@@ -609,36 +665,4 @@ function normalizeError(error) {
   } catch (serializationError) {
     return { message: "Unknown error" };
   }
-}
-
-function cloneForAssignment(value, seen) {
-  if (!seen) {
-    seen = new WeakMap();
-  }
-  if (value === null || typeof value !== "object") {
-    return value;
-  }
-  if (seen.has(value)) {
-    return seen.get(value);
-  }
-  if (Array.isArray(value)) {
-    const arrayClone = [];
-    seen.set(value, arrayClone);
-    for (let i = 0; i < value.length; i += 1) {
-      arrayClone[i] = cloneForAssignment(value[i], seen);
-    }
-    return arrayClone;
-  }
-  if (value instanceof Uint8Array) {
-    return value.slice();
-  }
-  if (value instanceof ArrayBuffer) {
-    return value.slice(0);
-  }
-  const clone = {};
-  seen.set(value, clone);
-  for (const key of Object.keys(value)) {
-    clone[key] = cloneForAssignment(value[key], seen);
-  }
-  return clone;
 }
