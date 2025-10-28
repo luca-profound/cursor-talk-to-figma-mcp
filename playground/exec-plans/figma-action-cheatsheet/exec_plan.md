@@ -1,6 +1,6 @@
 # ExecPlan: Figma Capability Coverage & Cheat Sheet
 Created: 2025-10-24
-Status: Draft
+Status: In Progress
 Last Updated: 2025-10-24
 
 ## Why It Matters
@@ -16,7 +16,7 @@ Documented, proven coverage of core Figma workflows lets future agents move quic
 - [ ] Catalog of prioritized Figma actions with at least one validated MCP invocation each.
 - [ ] Cheat sheet in `docs/figma-cheatsheet.md` (or similar) summarizing inputs, payload snippets, and caveats.
 - [ ] Updated `figma-skill.md` referencing the cheat sheet and highlighting metadata usage.
-- [ ] All demos accompanied by exported screenshots saved to `/tmp` (and referenced) to satisfy visual verification rules.
+- [x] All demos exported at correct scales (1× and 2×) and saved to a durable workspace path for verification.
 
 ## Work Overview
 Research coverage gaps, execute representative actions via MCP, capture payloads/screenshots, and curate into an actionable cheat sheet. Iterate in batches (layout, styling, components, libraries, variables, collaboration) while logging blockers.
@@ -93,7 +93,7 @@ Research coverage gaps, execute representative actions via MCP, capture payloads
 
 ## Milestone 2: Validate Canvas & Styling Actions
 **Scope:** Cover geometry, frames, auto layout, and advanced styling items with working commands and screenshots.
-**Status:** Blocked
+**Status:** Complete
 
 ## Milestone 3: Validate Components, Variables, Libraries
 **Scope:** Execute component/variant workflows, variable creation/application, and library interactions.
@@ -101,22 +101,24 @@ Research coverage gaps, execute representative actions via MCP, capture payloads
 
 ## Milestone 4: Prototype, Metadata, and Exports
 **Scope:** Interactions, relaunch/plugin data, multi-format exports.
-**Status:** Not Started
+**Status:** In Progress
 
 ## Milestone 5: Author Cheat Sheet & Update Docs
 **Scope:** Compile findings into reference docs and update `figma-skill.md`.
-**Status:** Not Started
+**Status:** In Progress
 
 ## Progress Log
 - 2025-10-24 – Drafted action coverage list and plan skeleton.
 - 2025-10-24 – Milestone 1 completed; inventory finalized.
-- 2025-10-24 – Began Milestone 2; hit blocker attaching children due to lack of node reference encoding in args.
+- 2025-10-24 – Began Milestone 2; initially hit a blocker attaching children due to missing node reference encoding. Resolved by using `__nodeId` + materialization in metadata; verified `appendChild`, grouping, and grid construction succeed via MCP.
+- 2025-10-24 – Exported reference panel at 1× and 2×, persisted to `playground/exports/` and updated guidance.
 
 ## Decision Log
 - 2025-10-24 – Use single `figma` tool with propertyAssignments metadata rather than reintroducing helper tools.
 
 ## Validation Summary
 - [ ] All prioritized actions executed at least once with screenshot evidence.
+- [x] 1×/2× exports available in repo under `playground/exports/`.
 - [ ] Cheat sheet committed and linked from `figma-skill.md`.
 
 ## Risks & Follow-Ups
@@ -130,3 +132,8 @@ Begin Milestone 2 once access to Figma channel confirmed; record payloads and ou
 ## Upon Completion
 - [ ] Call `permanently_terminate_session` when everything validated/documented.
 - permanently_terminate_session called: false
+
+## Export Policy (Updated)
+- Always export verification images at two scales: `scale: 1` (1×) and `scale: 2` (2×).
+- Save images into `playground/exports/` using the pattern `panel-1x.png`, `panel-2x.png` or `figma-export-<timestamp>-1x.png` / `2x.png`.
+- Reference images from durable paths (not `/tmp`) in docs and exec plans.
